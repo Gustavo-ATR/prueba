@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Asistente Interactivo de Literatura Técnica - Taller Mecánico</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: #0f172a;
+      color: #f8fafc;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .main-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 20px;
+      padding: 30px;
+      max-width: 500px;
+      width: 100%;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+      text-align: center;
+    }
+    .header-tag {
+      display: inline-block;
+      background: #0284c7;
+      color: #e0f2fe;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin-bottom: 15px;
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 8px;
+      color: #f1f5f9;
+    }
+    p.subtitle {
+      color: #94a3b8;
+      font-size: 0.9rem;
+      margin-bottom: 25px;
+    }
+    .avatar-wrapper {
+      position: relative;
+      width: 220px;
+      height: 220px;
+      margin: 0 auto 25px auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .glow-ring {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.2) 0%, rgba(15, 23, 42, 0) 70%);
+      transition: all 0.3s ease;
+    }
+    .avatar-box {
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      background: #0f172a;
+      border: 3px solid #38bdf8;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+      box-shadow: 0 0 15px rgba(56, 189, 248, 0.3);
+      transition: all 0.3s ease;
+    }
+    .book-icon {
+      font-size: 60px;
+      margin-bottom: 5px;
+      user-select: none;
+    }
+    .avatar-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #38bdf8;
+    }
+    /* Animación al hablar */
+    .speaking .glow-ring {
+      animation: pulse-ring 1.2s infinite ease-in-out;
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.6) 0%, rgba(15, 23, 42, 0) 70%);
+    }
+    .speaking .avatar-box {
+      border-color: #38bdf8;
+      box-shadow: 0 0 30px rgba(56, 189, 248, 0.8);
+      transform: scale(1.05);
+    }
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); opacity: 0.6; }
+      50% { transform: scale(1.2); opacity: 1; }
+      100% { transform: scale(0.95); opacity: 0.6; }
+    }
+    .config-box {
+      background: #0f172a;
+      padding: 15px;
+      border-radius: 12px;
+      border: 1px solid #334155;
+      margin-bottom: 20px;
+      text-align: left;
+    }
+    .config-box label {
+      display: block;
+      font-size: 0.8rem;
+      color: #94a3b8;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .config-box input {
+      width: 100%;
+      padding: 10px;
+      background: #1e293b;
+      border: 1px solid #475569;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 0.85rem;
+      outline: none;
+    }
+    .config-box input:focus {
+      border-color: #38bdf8;
+    }
+    .controls {
+      display: flex;
+      gap: 12px;
+    }
+    button {
+      flex: 1;
+      padding: 14px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn-start {
+      background: #0284c7;
+      color: #ffffff;
+    }
+    .btn-start:hover {
+      background: #0369a1;
+    }
+    .btn-stop {
+      background: #334155;
+      color: #94a3b8;
+    }
+    .btn-stop:hover:not(:disabled) {
+      background: #dc2626;
+      color: #fff;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .status-bar {
+      margin-top: 20px;
+      font-size: 0.85rem;
+      color: #64748b;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #64748b;
+    }
+    .status-dot.active {
+      background: #22c55e;
+      box-shadow: 0 0 8px #22c55e;
+    }
+    .status-dot.error {
+      background: #ef4444;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="main-card">
+    <span class="header-tag">Google AI Studio • WebSocket Live</span>
+    <h1>Libro Técnico de Taller</h1>
+    <p class="subtitle">Asistente conversacional en tiempo real para metrología y mecánica</p>
+
+    <div id="avatarWrapper" class="avatar-wrapper">
+      <div class="glow-ring"></div>
+      <div class="avatar-box">
+        <div class="book-icon">📘</div>
+        <div class="avatar-label">MANUAL TÉCNICO</div>
+      </div>
+    </div>
+
+    <div class="config-box">
+      <label for="apiKeyInput">API Key de Google AI Studio:</label>
+      <input type="password" id="apiKeyInput" placeholder="Pega aquí tu API Key (AIzaSy...)">
+    </div>
+
+    <div class="controls">
+      <button id="startBtn" class="btn-start">Iniciar Transmisión</button>
+      <button id="stopBtn" class="btn-stop" disabled>Detener</button>
+    </div>
+
+    <div class="status-bar">
+      <div id="statusDot" class="status-dot"></div>
+      <span id="statusText">Estado: Listo para conectar</span>
+    </div>
+  </div>
+
+  <script>
+    let webSocket = null;
+    let audioContext = null;
+    let mediaStream = null;
+    let processor = null;
+
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    const avatarWrapper = document.getElementById('avatarWrapper');
+    const statusText = document.getElementById('statusText');
+    const statusDot = document.getElementById('statusDot');
+
+    const SYSTEM_INSTRUCTION = `Eres el "Manual Técnico de Taller", un personaje experto en literatura técnica de mecánica, metrología de vehículos y motores diésel de carga pesada. Respondes a las preguntas de los técnicos y estudiantes de forma muy clara, concisa, didáctica y con tono profesional. Mantén respuestas breves aptas para voz.`;
+
+    startBtn.addEventListener('click', async () => {
+      const apiKey = apiKeyInput.value.trim();
+      if (!apiKey) {
+        alert("Por favor ingresa tu API Key de Google AI Studio.");
+        return;
+      }
+
+      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
+
+      try {
+        updateStatus("Conectando con Google AI Studio...", "warning");
+        webSocket = new WebSocket(wsUrl);
+
+        webSocket.onopen = () => {
+          updateStatus("Conectado. Puedes hablar al micrófono.", "active");
+          startBtn.disabled = true;
+          stopBtn.disabled = false;
+
+          const setupMessage = {
+            setup: {
+              model: "models/gemini-2.0-flash-exp",
+              generationConfig: {
+                responseModalities: ["AUDIO"],
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: {
+                      voiceName: "Puck"
+                    }
+                  }
+                }
+              },
+              systemInstruction: {
+                parts: [{ text: SYSTEM_INSTRUCTION }]
+              }
+            }
+          };
+          webSocket.send(JSON.stringify(setupMessage));
+          startAudioCapture();
+        };
+
+        webSocket.onmessage = async (event) => {
+          let data;
+          if (event.data instanceof Blob) {
+            data = JSON.parse(await event.data.text());
+          } else {
+            data = JSON.parse(event.data);
+          }
+
+          if (data.serverContent && data.serverContent.modelTurn) {
+            const parts = data.serverContent.modelTurn.parts;
+            for (const part of parts) {
+              if (part.inlineData && part.inlineData.mimeType.startsWith("audio/")) {
+                avatarWrapper.classList.add('speaking');
+                await playAudioChunk(part.inlineData.data);
+                avatarWrapper.classList.remove('speaking');
+              }
+            }
+          }
+        };
+
+        webSocket.onerror = (err) => {
+          console.error("WebSocket Error:", err);
+          updateStatus("Error de conexión con la API", "error");
+        };
+
+        webSocket.onclose = () => {
+          updateStatus("Desconectado", "inactive");
+          resetControls();
+        };
+
+      } catch (err) {
+        console.error(err);
+        updateStatus("Error de inicialización", "error");
+      }
+    });
+
+    async function startAudioCapture() {
+      try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const source = audioContext.createMediaStreamSource(mediaStream);
+        
+        processor = audioContext.createScriptProcessor(512, 1, 1);
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+
+        processor.onaudioprocess = (e) => {
+          if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+            const inputData = e.inputBuffer.getChannelData(0);
+            const pcm16 = convertFloat32ToPCM16(inputData);
+            const base64Audio = arrayBufferToBase64(pcm16);
+
+            const audioMessage = {
+              realtimeInput: {
+                mediaChunks: [
+                  {
+                    mimeType: "audio/pcm",
+                    data: base64Audio
+                  }
+                ]
+              }
+            };
+            webSocket.send(JSON.stringify(audioMessage));
+          }
+        };
+      } catch (err) {
+        console.error("Error al acceder al micrófono:", err);
+        updateStatus("Permiso de micrófono denegado", "error");
+      }
+    }
+
+    async function playAudioChunk(base64Data) {
+      return new Promise((resolve) => {
+        const arrayBuffer = base64ToArrayBuffer(base64Data);
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        audioCtx.decodeAudioData(arrayBuffer, (buffer) => {
+          const source = audioCtx.createBufferSource();
+          source.buffer = buffer;
+          source.connect(audioCtx.destination);
+          source.onended = resolve;
+          source.start(0);
+        }, () => resolve());
+      });
+    }
+
+    function convertFloat32ToPCM16(buffer) {
+      let l = buffer.length;
+      let buf = new Int16Array(l);
+      while (l--) {
+        buf[l] = Math.max(-1, Math.min(1, buffer[l])) * 0x7FFF;
+      }
+      return buf.buffer;
+    }
+
+    function arrayBufferToBase64(buffer) {
+      let binary = '';
+      let bytes = new Uint8Array(buffer);
+      let len = bytes.byteLength;
+      for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return window.btoa(binary);
+    }
+
+    function base64ToArrayBuffer(base64) {
+      let binaryString = window.atob(base64);
+      let len = binaryString.length;
+      let bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+
+    function updateStatus(message, state) {
+      statusText.innerText = `Estado: ${message}`;
+      statusDot.className = "status-dot";
+      if (state === "active") statusDot.classList.add("active");
+      if (state === "error") statusDot.classList.add("error");
+    }
+
+    function resetControls() {
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      avatarWrapper.classList.remove('speaking');
+      if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
+      if (audioContext) audioContext.close();
+    }
+
+    stopBtn.addEventListener('click', () => {
+      if (webSocket) webSocket.close();
+      resetControls();
+    });
+  </script>
+</body>
+</html>
