@@ -137,43 +137,16 @@
     .status-dot.active { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
     .status-dot.error { background: #ef4444; }
   </style>
-</head>
-<body>
 
-  <div class="main-card">
-    <span class="header-tag">Google AI Studio • WebSocket Live</span>
-    <h1>Libro Técnico de Taller</h1>
-    <p class="subtitle">Asistente conversacional en tiempo real para metrología y mecánica</p>
+  <!-- Importar cliente de transmisión oficial de Google GenAI -->
+  <script type="module">
+    import { GoogleGenAI } from "https://esm.sh/@google/genai";
 
-    <div id="avatarWrapper" class="avatar-wrapper">
-      <div class="glow-ring"></div>
-      <div class="avatar-box">
-        <div class="book-icon">📘</div>
-        <div class="avatar-label">MANUAL TÉCNICO</div>
-      </div>
-    </div>
-
-    <div class="config-box">
-      <label for="apiKeyInput">API Key de Google AI Studio:</label>
-      <input type="password" id="apiKeyInput" placeholder="Pega aquí tu API Key (AQ... o AIza...)">
-    </div>
-
-    <div class="controls">
-      <button id="startBtn" class="btn-start">Iniciar Transmisión</button>
-      <button id="stopBtn" class="btn-stop" disabled>Detener</button>
-    </div>
-
-    <div class="status-bar">
-      <div id="statusDot" class="status-dot"></div>
-      <span id="statusText">Estado: Listo para conectar</span>
-    </div>
-  </div>
-
-  <script>
-    let webSocket = null;
+    let aiClient = null;
     let audioContext = null;
     let mediaStream = null;
     let processor = null;
+    let activeSession = null;
 
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
@@ -191,84 +164,67 @@
         return;
       }
 
-      // Usar el endpoint oficial de transmisión Bidi
-      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
-
       try {
-        updateStatus("Inicializando audio y micrófono...", "warning");
+        updateStatus("Iniciando componentes de audio...", "warning");
         
-        // 1. Inicializar y reanudar explícitamente AudioContext tras la interacción
+        // Inicializar Audio Context con interacción directa de usuario
         audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
         if (audioContext.state === 'suspended') {
           await audioContext.resume();
         }
 
-        // 2. Solicitar permiso de micrófono
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
         updateStatus("Conectando con Google AI Studio...", "warning");
-        webSocket = new WebSocket(wsUrl);
+        
+        // Instanciar cliente oficial
+        aiClient = new GoogleGenAI({ apiKey: apiKey });
 
-        webSocket.onopen = () => {
-          updateStatus("Conectado. Puedes hablar al micrófono.", "active");
-          startBtn.disabled = true;
-          stopBtn.disabled = false;
-
-          const setupMessage = {
-            setup: {
-              model: "models/gemini-2.0-flash-exp",
-              generationConfig: {
-                responseModalities: ["AUDIO"],
-                speechConfig: {
-                  voiceConfig: {
-                    prebuiltVoiceConfig: {
-                      voiceName: "Puck"
-                    }
-                  }
-                }
-              },
-              systemInstruction: {
-                parts: [{ text: SYSTEM_INSTRUCTION }]
-              }
+        // Crear sesión en vivo bidireccional
+        activeSession = await aiClient.createWebSocketSession({
+          model: "gemini-2.0-flash-exp",
+          config: {
+            responseModalities: ["AUDIO"],
+            systemInstruction: SYSTEM_INSTRUCTION,
+            speechConfig: {
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } }
             }
-          };
-          webSocket.send(JSON.stringify(setupMessage));
-          startAudioCapture();
-        };
-
-        webSocket.onmessage = async (event) => {
-          let data;
-          if (event.data instanceof Blob) {
-            data = JSON.parse(await event.data.text());
-          } else {
-            data = JSON.parse(event.data);
           }
+        });
 
-          if (data.serverContent && data.serverContent.modelTurn) {
-            const parts = data.serverContent.modelTurn.parts;
-            for (const part of parts) {
-              if (part.inlineData && part.inlineData.mimeType.startsWith("audio/")) {
+        updateStatus("Conectado. Puedes hablar al micrófono.", "active");
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+
+        // Escuchar respuestas de audio de la sesión
+        activeSession.on("content", async (content) => {
+          if (content.modelTurn && content.modelTurn.parts) {
+            for (const part of content.modelTurn.parts) {
+              if (part.inlineData && part.inlineData.data) {
                 avatarWrapper.classList.add('speaking');
                 await playAudioChunk(part.inlineData.data);
                 avatarWrapper.classList.remove('speaking');
               }
             }
           }
-        };
+        });
 
-        webSocket.onerror = (err) => {
-          console.error("WebSocket Error:", err);
-          updateStatus("Error de conexión con la API", "error");
-        };
-
-        webSocket.onclose = () => {
+        activeSession.on("close", () => {
           updateStatus("Desconectado", "inactive");
           resetControls();
-        };
+        });
+
+        activeSession.on("error", (err) => {
+          console.error("Session Error:", err);
+          updateStatus("Error en la conexión con la API", "error");
+        });
+
+        // Enviar audio del micrófono
+        startAudioCapture();
 
       } catch (err) {
-        console.error("Error al iniciar:", err);
-        updateStatus("Error: Permiso de micrófono o API rechazado", "error");
+        console.error("Error global:", err);
+        updateStatus("Error: Verifica tu API Key o conexión", "error");
       }
     });
 
@@ -280,22 +236,16 @@
       processor.connect(audioContext.destination);
 
       processor.onaudioprocess = (e) => {
-        if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+        if (activeSession) {
           const inputData = e.inputBuffer.getChannelData(0);
           const pcm16 = convertFloat32ToPCM16(inputData);
           const base64Audio = arrayBufferToBase64(pcm16);
 
-          const audioMessage = {
+          activeSession.send({
             realtimeInput: {
-              mediaChunks: [
-                {
-                  mimeType: "audio/pcm",
-                  data: base64Audio
-                }
-              ]
+              mediaChunks: [{ mimeType: "audio/pcm", data: base64Audio }]
             }
-          };
-          webSocket.send(JSON.stringify(audioMessage));
+          });
         }
       };
     }
@@ -357,12 +307,45 @@
       avatarWrapper.classList.remove('speaking');
       if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
       if (audioContext && audioContext.state !== 'closed') audioContext.close();
+      activeSession = null;
     }
 
     stopBtn.addEventListener('click', () => {
-      if (webSocket) webSocket.close();
+      if (activeSession) activeSession.close();
       resetControls();
     });
   </script>
+</head>
+<body>
+
+  <div class="main-card">
+    <span class="header-tag">Google AI Studio • Live Session</span>
+    <h1>Libro Técnico de Taller</h1>
+    <p class="subtitle">Asistente conversacional en tiempo real para metrología y mecánica</p>
+
+    <div id="avatarWrapper" class="avatar-wrapper">
+      <div class="glow-ring"></div>
+      <div class="avatar-box">
+        <div class="book-icon">📘</div>
+        <div class="avatar-label">MANUAL TÉCNICO</div>
+      </div>
+    </div>
+
+    <div class="config-box">
+      <label for="apiKeyInput">API Key de Google AI Studio:</label>
+      <input type="password" id="apiKeyInput" placeholder="Pega aquí tu API Key (AQ...)">
+    </div>
+
+    <div class="controls">
+      <button id="startBtn" class="btn-start">Iniciar Transmisión</button>
+      <button id="stopBtn" class="btn-stop" disabled>Detener</button>
+    </div>
+
+    <div class="status-bar">
+      <div id="statusDot" class="status-dot"></div>
+      <span id="statusText">Estado: Listo para conectar</span>
+    </div>
+  </div>
+
 </body>
 </html>
