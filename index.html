@@ -3,13 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Asistente Interactivo de Literatura Técnica - Taller Mecánico</title>
+  <title>Asistente Interactivo de Literatura Técnica</title>
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       background-color: #0f172a;
       color: #f8fafc;
@@ -28,7 +24,7 @@
       padding: 30px;
       max-width: 500px;
       width: 100%;
-      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
       text-align: center;
     }
     .header-tag {
@@ -43,16 +39,8 @@
       border-radius: 20px;
       margin-bottom: 15px;
     }
-    h1 {
-      font-size: 1.5rem;
-      margin-bottom: 8px;
-      color: #f1f5f9;
-    }
-    p.subtitle {
-      color: #94a3b8;
-      font-size: 0.9rem;
-      margin-bottom: 25px;
-    }
+    h1 { font-size: 1.5rem; margin-bottom: 8px; color: #f1f5f9; }
+    p.subtitle { color: #94a3b8; font-size: 0.9rem; margin-bottom: 25px; }
     .avatar-wrapper {
       position: relative;
       width: 220px;
@@ -84,17 +72,9 @@
       box-shadow: 0 0 15px rgba(56, 189, 248, 0.3);
       transition: all 0.3s ease;
     }
-    .book-icon {
-      font-size: 60px;
-      margin-bottom: 5px;
-      user-select: none;
-    }
-    .avatar-label {
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: #38bdf8;
-    }
-    /* Animación al hablar */
+    .book-icon { font-size: 60px; margin-bottom: 5px; user-select: none; }
+    .avatar-label { font-size: 0.8rem; font-weight: 600; color: #38bdf8; }
+    
     .speaking .glow-ring {
       animation: pulse-ring 1.2s infinite ease-in-out;
       background: radial-gradient(circle, rgba(56, 189, 248, 0.6) 0%, rgba(15, 23, 42, 0) 70%);
@@ -117,13 +97,7 @@
       margin-bottom: 20px;
       text-align: left;
     }
-    .config-box label {
-      display: block;
-      font-size: 0.8rem;
-      color: #94a3b8;
-      margin-bottom: 6px;
-      font-weight: 600;
-    }
+    .config-box label { display: block; font-size: 0.8rem; color: #94a3b8; margin-bottom: 6px; font-weight: 600; }
     .config-box input {
       width: 100%;
       padding: 10px;
@@ -134,13 +108,7 @@
       font-size: 0.85rem;
       outline: none;
     }
-    .config-box input:focus {
-      border-color: #38bdf8;
-    }
-    .controls {
-      display: flex;
-      gap: 12px;
-    }
+    .controls { display: flex; gap: 12px; }
     button {
       flex: 1;
       padding: 14px;
@@ -151,25 +119,11 @@
       cursor: pointer;
       transition: all 0.2s ease;
     }
-    .btn-start {
-      background: #0284c7;
-      color: #ffffff;
-    }
-    .btn-start:hover {
-      background: #0369a1;
-    }
-    .btn-stop {
-      background: #334155;
-      color: #94a3b8;
-    }
-    .btn-stop:hover:not(:disabled) {
-      background: #dc2626;
-      color: #fff;
-    }
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
+    .btn-start { background: #0284c7; color: #ffffff; }
+    .btn-start:hover { background: #0369a1; }
+    .btn-stop { background: #334155; color: #94a3b8; }
+    .btn-stop:hover:not(:disabled) { background: #dc2626; color: #fff; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
     .status-bar {
       margin-top: 20px;
       font-size: 0.85rem;
@@ -179,19 +133,9 @@
       justify-content: center;
       gap: 8px;
     }
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #64748b;
-    }
-    .status-dot.active {
-      background: #22c55e;
-      box-shadow: 0 0 8px #22c55e;
-    }
-    .status-dot.error {
-      background: #ef4444;
-    }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #64748b; }
+    .status-dot.active { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+    .status-dot.error { background: #ef4444; }
   </style>
 </head>
 <body>
@@ -211,7 +155,7 @@
 
     <div class="config-box">
       <label for="apiKeyInput">API Key de Google AI Studio:</label>
-      <input type="password" id="apiKeyInput" placeholder="Pega aquí tu API Key (AIzaSy...)">
+      <input type="password" id="apiKeyInput" placeholder="Pega aquí tu API Key (AQ... o AIza...)">
     </div>
 
     <div class="controls">
@@ -247,9 +191,21 @@
         return;
       }
 
+      // Usar el endpoint oficial de transmisión Bidi
       const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
 
       try {
+        updateStatus("Inicializando audio y micrófono...", "warning");
+        
+        // 1. Inicializar y reanudar explícitamente AudioContext tras la interacción
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+
+        // 2. Solicitar permiso de micrófono
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
         updateStatus("Conectando con Google AI Studio...", "warning");
         webSocket = new WebSocket(wsUrl);
 
@@ -311,55 +267,48 @@
         };
 
       } catch (err) {
-        console.error(err);
-        updateStatus("Error de inicialización", "error");
+        console.error("Error al iniciar:", err);
+        updateStatus("Error: Permiso de micrófono o API rechazado", "error");
       }
     });
 
-    async function startAudioCapture() {
-      try {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const source = audioContext.createMediaStreamSource(mediaStream);
-        
-        processor = audioContext.createScriptProcessor(512, 1, 1);
-        source.connect(processor);
-        processor.connect(audioContext.destination);
+    function startAudioCapture() {
+      const source = audioContext.createMediaStreamSource(mediaStream);
+      processor = audioContext.createScriptProcessor(512, 1, 1);
+      
+      source.connect(processor);
+      processor.connect(audioContext.destination);
 
-        processor.onaudioprocess = (e) => {
-          if (webSocket && webSocket.readyState === WebSocket.OPEN) {
-            const inputData = e.inputBuffer.getChannelData(0);
-            const pcm16 = convertFloat32ToPCM16(inputData);
-            const base64Audio = arrayBufferToBase64(pcm16);
+      processor.onaudioprocess = (e) => {
+        if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+          const inputData = e.inputBuffer.getChannelData(0);
+          const pcm16 = convertFloat32ToPCM16(inputData);
+          const base64Audio = arrayBufferToBase64(pcm16);
 
-            const audioMessage = {
-              realtimeInput: {
-                mediaChunks: [
-                  {
-                    mimeType: "audio/pcm",
-                    data: base64Audio
-                  }
-                ]
-              }
-            };
-            webSocket.send(JSON.stringify(audioMessage));
-          }
-        };
-      } catch (err) {
-        console.error("Error al acceder al micrófono:", err);
-        updateStatus("Permiso de micrófono denegado", "error");
-      }
+          const audioMessage = {
+            realtimeInput: {
+              mediaChunks: [
+                {
+                  mimeType: "audio/pcm",
+                  data: base64Audio
+                }
+              ]
+            }
+          };
+          webSocket.send(JSON.stringify(audioMessage));
+        }
+      };
     }
 
     async function playAudioChunk(base64Data) {
       return new Promise((resolve) => {
         const arrayBuffer = base64ToArrayBuffer(base64Data);
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (!audioContext) return resolve();
         
-        audioCtx.decodeAudioData(arrayBuffer, (buffer) => {
-          const source = audioCtx.createBufferSource();
+        audioContext.decodeAudioData(arrayBuffer, (buffer) => {
+          const source = audioContext.createBufferSource();
           source.buffer = buffer;
-          source.connect(audioCtx.destination);
+          source.connect(audioContext.destination);
           source.onended = resolve;
           source.start(0);
         }, () => resolve());
@@ -407,7 +356,7 @@
       stopBtn.disabled = true;
       avatarWrapper.classList.remove('speaking');
       if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
-      if (audioContext) audioContext.close();
+      if (audioContext && audioContext.state !== 'closed') audioContext.close();
     }
 
     stopBtn.addEventListener('click', () => {
