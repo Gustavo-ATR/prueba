@@ -89,6 +89,19 @@
       50% { transform: scale(1.2); opacity: 1; }
       100% { transform: scale(0.95); opacity: 0.6; }
     }
+    .transcript-box {
+      background: #0f172a;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid #334155;
+      margin-bottom: 20px;
+      min-height: 50px;
+      max-height: 80px;
+      overflow-y: auto;
+      font-size: 0.85rem;
+      color: #cbd5e1;
+      text-align: left;
+    }
     .config-box {
       background: #0f172a;
       padding: 15px;
@@ -141,9 +154,9 @@
 <body>
 
   <div class="main-card">
-    <span class="header-tag">Google AI Studio • Live Session</span>
+    <span class="header-tag">Google AI Studio • Voice Agent</span>
     <h1>Libro Técnico de Taller</h1>
-    <p class="subtitle">Asistente conversacional en tiempo real para metrología y mecánica</p>
+    <p class="subtitle">Asistente conversacional para metrología y mecánica</p>
 
     <div id="avatarWrapper" class="avatar-wrapper">
       <div class="glow-ring"></div>
@@ -153,203 +166,141 @@
       </div>
     </div>
 
+    <div class="transcript-box" id="transcript">
+      <i>Presiona "Hablar con el Personaje" y realiza tu pregunta...</i>
+    </div>
+
     <div class="config-box">
       <label for="apiKeyInput">API Key de Google AI Studio:</label>
       <input type="password" id="apiKeyInput" placeholder="Pega aquí tu API Key (AQ... o AIza...)">
     </div>
 
     <div class="controls">
-      <button id="startBtn" class="btn-start">Iniciar Transmisión</button>
-      <button id="stopBtn" class="btn-stop" disabled>Detener</button>
+      <button id="startBtn" class="btn-start">Hablar con el Personaje</button>
+      <button id="stopBtn" class="btn-stop" disabled>Detener Voz</button>
     </div>
 
     <div class="status-bar">
       <div id="statusDot" class="status-dot"></div>
-      <span id="statusText">Estado: Listo para conectar</span>
+      <span id="statusText">Estado: Listo</span>
     </div>
   </div>
 
   <script>
-    let webSocket = null;
-    let audioContext = null;
-    let mediaStream = null;
-    let scriptNode = null;
-
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const apiKeyInput = document.getElementById('apiKeyInput');
     const avatarWrapper = document.getElementById('avatarWrapper');
     const statusText = document.getElementById('statusText');
     const statusDot = document.getElementById('statusDot');
+    const transcript = document.getElementById('transcript');
 
-    const SYSTEM_INSTRUCTION = `Eres el "Manual Técnico de Taller", un personaje experto en literatura técnica de mecánica, metrología de vehículos y motores diésel de carga pesada. Respondes a las preguntas de los técnicos y estudiantes de forma muy clara, concisa, didáctica y con tono profesional. Mantén respuestas breves aptas para voz.`;
+    const SYSTEM_INSTRUCTION = `Eres el "Manual Técnico de Taller", un personaje experto en literatura técnica de mecánica, metrología de vehículos y motores diésel de carga pesada. Respondes a las preguntas de los técnicos y estudiantes de forma muy clara, concisa, didáctica y con tono profesional. Mantén respuestas breves (máximo 2 o 3 frases) aptas para ser escuchadas.`;
 
-    startBtn.addEventListener('click', async () => {
+    // Reconocimiento de Voz
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;
+    let synth = window.speechSynthesis;
+
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.lang = 'es-ES';
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      recognition.onstart = () => {
+        updateStatus("Escuchando tu pregunta...", "active");
+        transcript.innerText = "Escuchando...";
+      };
+
+      recognition.onresult = async (event) => {
+        const userText = event.results[0][0].transcript;
+        transcript.innerHTML = `<b>Tú:</b> ${userText}`;
+        updateStatus("Pensando respuesta...", "warning");
+        await askGemini(userText);
+      };
+
+      recognition.onerror = (event) => {
+        console.error("Error de reconocimiento:", event.error);
+        updateStatus("Error de micrófono o voz no detectada", "error");
+        resetControls();
+      };
+
+      recognition.onend = () => {
+        startBtn.disabled = false;
+      };
+    } else {
+      alert("Tu navegador no soporta reconocimiento de voz. Usa Google Chrome o Microsoft Edge.");
+    }
+
+    startBtn.addEventListener('click', () => {
       const apiKey = apiKeyInput.value.trim();
       if (!apiKey) {
         alert("Por favor ingresa tu API Key de Google AI Studio.");
         return;
       }
-
-      try {
-        updateStatus("Solicitando micrófono...", "warning");
-
-        // 1. Obtener audio del micrófono
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-        // 2. Crear un nuevo AudioContext completamente limpio dentro del click event
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        audioContext = new AudioCtx({ sampleRate: 16000 });
-        if (audioContext.state === 'suspended') {
-          await audioContext.resume();
-        }
-
-        updateStatus("Conectando con Google AI Studio...", "warning");
-
-        // Endpoint WebSocket
-        const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
-        webSocket = new WebSocket(wsUrl);
-
-        webSocket.onopen = () => {
-          updateStatus("Conectado. Puedes hablar al micrófono.", "active");
-          startBtn.disabled = true;
-          stopBtn.disabled = false;
-
-          // Configuración inicial del WebSocket
-          const setupMessage = {
-            setup: {
-              model: "models/gemini-2.0-flash-exp",
-              generationConfig: {
-                responseModalities: ["AUDIO"],
-                speechConfig: {
-                  voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: "Puck" }
-                  }
-                }
-              },
-              systemInstruction: {
-                parts: [{ text: SYSTEM_INSTRUCTION }]
-              }
-            }
-          };
-          webSocket.send(JSON.stringify(setupMessage));
-
-          // Iniciar procesamiento de micrófono solo cuando la conexión está abierta
-          startRecording();
-        };
-
-        webSocket.onmessage = async (event) => {
-          try {
-            let data;
-            if (event.data instanceof Blob) {
-              data = JSON.parse(await event.data.text());
-            } else {
-              data = JSON.parse(event.data);
-            }
-
-            if (data.serverContent && data.serverContent.modelTurn) {
-              const parts = data.serverContent.modelTurn.parts;
-              for (const part of parts) {
-                if (part.inlineData && part.inlineData.mimeType && part.inlineData.mimeType.startsWith("audio/")) {
-                  avatarWrapper.classList.add('speaking');
-                  await playAudioChunk(part.inlineData.data);
-                  avatarWrapper.classList.remove('speaking');
-                }
-              }
-            }
-          } catch (err) {
-            console.error("Error al procesar audio recibido:", err);
-          }
-        };
-
-        webSocket.onerror = (err) => {
-          console.error("WebSocket error:", err);
-          updateStatus("Error de conexión con la API", "error");
-        };
-
-        webSocket.onclose = () => {
-          updateStatus("Desconectado", "inactive");
-          resetControls();
-        };
-
-      } catch (err) {
-        console.error("Error al iniciar:", err);
-        updateStatus("Permiso de micrófono denegado o error de audio", "error");
-      }
+      if (synth.speaking) synth.cancel();
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      recognition.start();
     });
 
-    function startRecording() {
-      if (!audioContext || audioContext.state === 'closed') return;
+    async function askGemini(question) {
+      const apiKey = apiKeyInput.value.trim();
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
-      const source = audioContext.createMediaStreamSource(mediaStream);
-      scriptNode = audioContext.createScriptProcessor(4096, 1, 1);
-
-      scriptNode.onaudioprocess = (e) => {
-        if (webSocket && webSocket.readyState === WebSocket.OPEN) {
-          const inputData = e.inputBuffer.getChannelData(0);
-          const pcm16 = convertFloat32ToPCM16(inputData);
-          const base64Audio = arrayBufferToBase64(pcm16);
-
-          const audioMessage = {
-            realtimeInput: {
-              mediaChunks: [
-                {
-                  mimeType: "audio/pcm",
-                  data: base64Audio
-                }
-              ]
-            }
-          };
-          webSocket.send(JSON.stringify(audioMessage));
-        }
+      const payload = {
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: `${SYSTEM_INSTRUCTION}\n\nPregunta del estudiante: ${question}` }]
+          }
+        ]
       };
 
-      source.connect(scriptNode);
-      scriptNode.connect(audioContext.destination);
-    }
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
 
-    async function playAudioChunk(base64Data) {
-      return new Promise((resolve) => {
-        if (!audioContext || audioContext.state === 'closed') return resolve();
+        const data = await response.json();
 
-        const arrayBuffer = base64ToArrayBuffer(base64Data);
-        audioContext.decodeAudioData(arrayBuffer, (buffer) => {
-          const source = audioContext.createBufferSource();
-          source.buffer = buffer;
-          source.connect(audioContext.destination);
-          source.onended = resolve;
-          source.start(0);
-        }, () => resolve());
-      });
-    }
-
-    function convertFloat32ToPCM16(buffer) {
-      let l = buffer.length;
-      let buf = new Int16Array(l);
-      while (l--) {
-        buf[l] = Math.max(-1, Math.min(1, buffer[l])) * 0x7FFF;
+        if (data.candidates && data.candidates[0].content.parts[0].text) {
+          const aiReply = data.candidates[0].content.parts[0].text;
+          transcript.innerHTML += `<br><b>Manual:</b> ${aiReply}`;
+          speak(aiReply);
+        } else {
+          updateStatus("Error en la respuesta de la API", "error");
+          console.error(data);
+        }
+      } catch (err) {
+        console.error("Error al conectar con Gemini:", err);
+        updateStatus("Error de red o API Key inválida", "error");
       }
-      return buf.buffer;
     }
 
-    function arrayBufferToBase64(buffer) {
-      let binary = '';
-      let bytes = new Uint8Array(buffer);
-      let len = bytes.byteLength;
-      for (let i = 0; i < len; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      return window.btoa(binary);
-    }
+    function speak(text) {
+      if (!synth) return;
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'es-ES';
+      utterance.rate = 1.0;
+      utterance.pitch = 0.9; // Voz un poco más grave para el libro técnico
 
-    function base64ToArrayBuffer(base64) {
-      let binaryString = window.atob(base64);
-      let len = binaryString.length;
-      let bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      return bytes.buffer;
+      utterance.onstart = () => {
+        avatarWrapper.classList.add('speaking');
+        updateStatus("Hablando...", "active");
+      };
+
+      utterance.onend = () => {
+        avatarWrapper.classList.remove('speaking');
+        updateStatus("Listo para la siguiente pregunta", "inactive");
+        resetControls();
+      };
+
+      synth.speak(utterance);
     }
 
     function updateStatus(message, state) {
@@ -362,16 +313,13 @@
     function resetControls() {
       startBtn.disabled = false;
       stopBtn.disabled = true;
-      avatarWrapper.classList.remove('speaking');
-      if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
-      if (scriptNode) scriptNode.disconnect();
-      if (audioContext && audioContext.state !== 'closed') {
-        audioContext.close();
-      }
     }
 
     stopBtn.addEventListener('click', () => {
-      if (webSocket) webSocket.close();
+      if (synth.speaking) synth.cancel();
+      if (recognition) recognition.stop();
+      avatarWrapper.classList.remove('speaking');
+      updateStatus("Detenido", "inactive");
       resetControls();
     });
   </script>
