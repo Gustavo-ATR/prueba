@@ -137,16 +137,43 @@
     .status-dot.active { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
     .status-dot.error { background: #ef4444; }
   </style>
+</head>
+<body>
 
-  <!-- Importar cliente de transmisión oficial de Google GenAI -->
-  <script type="module">
-    import { GoogleGenAI } from "https://esm.sh/@google/genai";
+  <div class="main-card">
+    <span class="header-tag">Google AI Studio • Live Session</span>
+    <h1>Libro Técnico de Taller</h1>
+    <p class="subtitle">Asistente conversacional en tiempo real para metrología y mecánica</p>
 
-    let aiClient = null;
+    <div id="avatarWrapper" class="avatar-wrapper">
+      <div class="glow-ring"></div>
+      <div class="avatar-box">
+        <div class="book-icon">📘</div>
+        <div class="avatar-label">MANUAL TÉCNICO</div>
+      </div>
+    </div>
+
+    <div class="config-box">
+      <label for="apiKeyInput">API Key de Google AI Studio:</label>
+      <input type="password" id="apiKeyInput" placeholder="Pega aquí tu API Key (AQ...)">
+    </div>
+
+    <div class="controls">
+      <button id="startBtn" class="btn-start">Iniciar Transmisión</button>
+      <button id="stopBtn" class="btn-stop" disabled>Detener</button>
+    </div>
+
+    <div class="status-bar">
+      <div id="statusDot" class="status-dot"></div>
+      <span id="statusText">Estado: Listo para conectar</span>
+    </div>
+  </div>
+
+  <script>
+    let webSocket = null;
     let audioContext = null;
     let mediaStream = null;
     let processor = null;
-    let activeSession = null;
 
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
@@ -164,88 +191,113 @@
         return;
       }
 
+      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
+
       try {
-        updateStatus("Iniciando componentes de audio...", "warning");
+        updateStatus("Solicitando acceso a micrófono...", "warning");
+
+        // Capturar micrófono primero
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         
-        // Inicializar Audio Context con interacción directa de usuario
+        // Crear contexto de audio de forma interactiva
         audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
         if (audioContext.state === 'suspended') {
           await audioContext.resume();
         }
 
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        updateStatus("Conectando servidor...", "warning");
+        webSocket = new WebSocket(wsUrl);
 
-        updateStatus("Conectando con Google AI Studio...", "warning");
-        
-        // Instanciar cliente oficial
-        aiClient = new GoogleGenAI({ apiKey: apiKey });
+        webSocket.onopen = () => {
+          updateStatus("Conectado. Puedes hablar al micrófono.", "active");
+          startBtn.disabled = true;
+          stopBtn.disabled = false;
 
-        // Crear sesión en vivo bidireccional
-        activeSession = await aiClient.createWebSocketSession({
-          model: "gemini-2.0-flash-exp",
-          config: {
-            responseModalities: ["AUDIO"],
-            systemInstruction: SYSTEM_INSTRUCTION,
-            speechConfig: {
-              voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } }
-            }
-          }
-        });
-
-        updateStatus("Conectado. Puedes hablar al micrófono.", "active");
-        startBtn.disabled = true;
-        stopBtn.disabled = false;
-
-        // Escuchar respuestas de audio de la sesión
-        activeSession.on("content", async (content) => {
-          if (content.modelTurn && content.modelTurn.parts) {
-            for (const part of content.modelTurn.parts) {
-              if (part.inlineData && part.inlineData.data) {
-                avatarWrapper.classList.add('speaking');
-                await playAudioChunk(part.inlineData.data);
-                avatarWrapper.classList.remove('speaking');
+          // Enviar payload de inicio oficial
+          const setupMessage = {
+            setup: {
+              model: "models/gemini-2.0-flash-exp",
+              generationConfig: {
+                responseModalities: ["AUDIO"],
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: { voiceName: "Puck" }
+                  }
+                }
+              },
+              systemInstruction: {
+                parts: [{ text: SYSTEM_INSTRUCTION }]
               }
             }
-          }
-        });
+          };
+          webSocket.send(JSON.stringify(setupMessage));
+          startAudioCapture();
+        };
 
-        activeSession.on("close", () => {
+        webSocket.onmessage = async (event) => {
+          try {
+            let data;
+            if (event.data instanceof Blob) {
+              data = JSON.parse(await event.data.text());
+            } else {
+              data = JSON.parse(event.data);
+            }
+
+            if (data.serverContent && data.serverContent.modelTurn) {
+              const parts = data.serverContent.modelTurn.parts;
+              for (const part of parts) {
+                if (part.inlineData && part.inlineData.mimeType && part.inlineData.mimeType.startsWith("audio/")) {
+                  avatarWrapper.classList.add('speaking');
+                  await playAudioChunk(part.inlineData.data);
+                  avatarWrapper.classList.remove('speaking');
+                }
+              }
+            }
+          } catch (e) {
+            console.error("Error al procesar mensaje de audio:", e);
+          }
+        };
+
+        webSocket.onerror = (err) => {
+          console.error("WebSocket Error:", err);
+          updateStatus("Error en conexión WebSocket", "error");
+        };
+
+        webSocket.onclose = () => {
           updateStatus("Desconectado", "inactive");
           resetControls();
-        });
-
-        activeSession.on("error", (err) => {
-          console.error("Session Error:", err);
-          updateStatus("Error en la conexión con la API", "error");
-        });
-
-        // Enviar audio del micrófono
-        startAudioCapture();
+        };
 
       } catch (err) {
         console.error("Error global:", err);
-        updateStatus("Error: Verifica tu API Key o conexión", "error");
+        updateStatus("Error: Permiso denegado o falla en conexión", "error");
       }
     });
 
     function startAudioCapture() {
       const source = audioContext.createMediaStreamSource(mediaStream);
-      processor = audioContext.createScriptProcessor(512, 1, 1);
+      processor = audioContext.createScriptProcessor(2048, 1, 1);
       
       source.connect(processor);
       processor.connect(audioContext.destination);
 
       processor.onaudioprocess = (e) => {
-        if (activeSession) {
+        if (webSocket && webSocket.readyState === WebSocket.OPEN) {
           const inputData = e.inputBuffer.getChannelData(0);
           const pcm16 = convertFloat32ToPCM16(inputData);
           const base64Audio = arrayBufferToBase64(pcm16);
 
-          activeSession.send({
+          const audioMessage = {
             realtimeInput: {
-              mediaChunks: [{ mimeType: "audio/pcm", data: base64Audio }]
+              mediaChunks: [
+                {
+                  mimeType: "audio/pcm",
+                  data: base64Audio
+                }
+              ]
             }
-          });
+          };
+          webSocket.send(JSON.stringify(audioMessage));
         }
       };
     }
@@ -254,7 +306,7 @@
       return new Promise((resolve) => {
         const arrayBuffer = base64ToArrayBuffer(base64Data);
         if (!audioContext) return resolve();
-        
+
         audioContext.decodeAudioData(arrayBuffer, (buffer) => {
           const source = audioContext.createBufferSource();
           source.buffer = buffer;
@@ -307,45 +359,12 @@
       avatarWrapper.classList.remove('speaking');
       if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
       if (audioContext && audioContext.state !== 'closed') audioContext.close();
-      activeSession = null;
     }
 
     stopBtn.addEventListener('click', () => {
-      if (activeSession) activeSession.close();
+      if (webSocket) webSocket.close();
       resetControls();
     });
   </script>
-</head>
-<body>
-
-  <div class="main-card">
-    <span class="header-tag">Google AI Studio • Live Session</span>
-    <h1>Libro Técnico de Taller</h1>
-    <p class="subtitle">Asistente conversacional en tiempo real para metrología y mecánica</p>
-
-    <div id="avatarWrapper" class="avatar-wrapper">
-      <div class="glow-ring"></div>
-      <div class="avatar-box">
-        <div class="book-icon">📘</div>
-        <div class="avatar-label">MANUAL TÉCNICO</div>
-      </div>
-    </div>
-
-    <div class="config-box">
-      <label for="apiKeyInput">API Key de Google AI Studio:</label>
-      <input type="password" id="apiKeyInput" placeholder="Pega aquí tu API Key (AQ...)">
-    </div>
-
-    <div class="controls">
-      <button id="startBtn" class="btn-start">Iniciar Transmisión</button>
-      <button id="stopBtn" class="btn-stop" disabled>Detener</button>
-    </div>
-
-    <div class="status-bar">
-      <div id="statusDot" class="status-dot"></div>
-      <span id="statusText">Estado: Listo para conectar</span>
-    </div>
-  </div>
-
 </body>
 </html>
