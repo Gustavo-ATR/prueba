@@ -172,7 +172,7 @@
 
     <div class="config-box">
       <label for="apiKeyInput">API Key de Google AI Studio:</label>
-      <input type="password" id="apiKeyInput" placeholder="Pega aquí tu API Key (AQ... o AIza...)">
+      <input type="password" id="apiKeyInput" placeholder="Pega aquí tu API Key (AQ...)">
     </div>
 
     <div class="controls">
@@ -197,7 +197,6 @@
 
     const SYSTEM_INSTRUCTION = `Eres el "Manual Técnico de Taller", un personaje experto en literatura técnica de mecánica, metrología de vehículos y motores diésel de carga pesada. Respondes a las preguntas de los técnicos y estudiantes de forma muy clara, concisa, didáctica y con tono profesional. Mantén respuestas breves (máximo 2 o 3 frases) aptas para ser escuchadas.`;
 
-    // Reconocimiento de Voz
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition = null;
     let synth = window.speechSynthesis;
@@ -247,7 +246,7 @@
 
     async function askGemini(question) {
       const apiKey = apiKeyInput.value.trim();
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
 
       const payload = {
         contents: [
@@ -267,7 +266,7 @@
 
         const data = await response.json();
 
-        if (data.candidates && data.candidates[0].content.parts[0].text) {
+        if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts[0].text) {
           const aiReply = data.candidates[0].content.parts[0].text;
           transcript.innerHTML += `<br><b>Manual:</b> ${aiReply}`;
           speak(aiReply);
@@ -287,7 +286,7 @@
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'es-ES';
       utterance.rate = 1.0;
-      utterance.pitch = 0.9; // Voz un poco más grave para el libro técnico
+      utterance.pitch = 0.9;
 
       utterance.onstart = () => {
         avatarWrapper.classList.add('speaking');
