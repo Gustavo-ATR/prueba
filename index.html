@@ -155,7 +155,7 @@
 
     <div class="config-box">
       <label for="apiKeyInput">API Key de Google AI Studio:</label>
-      <input type="password" id="apiKeyInput" placeholder="Pega aquí tu API Key (AQ...)">
+      <input type="password" id="apiKeyInput" placeholder="Pega aquí tu API Key (AQ... o AIza...)">
     </div>
 
     <div class="controls">
@@ -173,7 +173,7 @@
     let webSocket = null;
     let audioContext = null;
     let mediaStream = null;
-    let processor = null;
+    let scriptNode = null;
 
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
@@ -191,21 +191,23 @@
         return;
       }
 
-      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
-
       try {
-        updateStatus("Solicitando acceso a micrófono...", "warning");
+        updateStatus("Solicitando micrófono...", "warning");
 
-        // Capturar micrófono primero
+        // 1. Obtener audio del micrófono
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        
-        // Crear contexto de audio de forma interactiva
-        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+
+        // 2. Crear un nuevo AudioContext completamente limpio dentro del click event
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        audioContext = new AudioCtx({ sampleRate: 16000 });
         if (audioContext.state === 'suspended') {
           await audioContext.resume();
         }
 
-        updateStatus("Conectando servidor...", "warning");
+        updateStatus("Conectando con Google AI Studio...", "warning");
+
+        // Endpoint WebSocket
+        const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
         webSocket = new WebSocket(wsUrl);
 
         webSocket.onopen = () => {
@@ -213,7 +215,7 @@
           startBtn.disabled = true;
           stopBtn.disabled = false;
 
-          // Enviar payload de inicio oficial
+          // Configuración inicial del WebSocket
           const setupMessage = {
             setup: {
               model: "models/gemini-2.0-flash-exp",
@@ -231,7 +233,9 @@
             }
           };
           webSocket.send(JSON.stringify(setupMessage));
-          startAudioCapture();
+
+          // Iniciar procesamiento de micrófono solo cuando la conexión está abierta
+          startRecording();
         };
 
         webSocket.onmessage = async (event) => {
@@ -253,14 +257,14 @@
                 }
               }
             }
-          } catch (e) {
-            console.error("Error al procesar mensaje de audio:", e);
+          } catch (err) {
+            console.error("Error al procesar audio recibido:", err);
           }
         };
 
         webSocket.onerror = (err) => {
-          console.error("WebSocket Error:", err);
-          updateStatus("Error en conexión WebSocket", "error");
+          console.error("WebSocket error:", err);
+          updateStatus("Error de conexión con la API", "error");
         };
 
         webSocket.onclose = () => {
@@ -269,19 +273,18 @@
         };
 
       } catch (err) {
-        console.error("Error global:", err);
-        updateStatus("Error: Permiso denegado o falla en conexión", "error");
+        console.error("Error al iniciar:", err);
+        updateStatus("Permiso de micrófono denegado o error de audio", "error");
       }
     });
 
-    function startAudioCapture() {
-      const source = audioContext.createMediaStreamSource(mediaStream);
-      processor = audioContext.createScriptProcessor(2048, 1, 1);
-      
-      source.connect(processor);
-      processor.connect(audioContext.destination);
+    function startRecording() {
+      if (!audioContext || audioContext.state === 'closed') return;
 
-      processor.onaudioprocess = (e) => {
+      const source = audioContext.createMediaStreamSource(mediaStream);
+      scriptNode = audioContext.createScriptProcessor(4096, 1, 1);
+
+      scriptNode.onaudioprocess = (e) => {
         if (webSocket && webSocket.readyState === WebSocket.OPEN) {
           const inputData = e.inputBuffer.getChannelData(0);
           const pcm16 = convertFloat32ToPCM16(inputData);
@@ -300,13 +303,16 @@
           webSocket.send(JSON.stringify(audioMessage));
         }
       };
+
+      source.connect(scriptNode);
+      scriptNode.connect(audioContext.destination);
     }
 
     async function playAudioChunk(base64Data) {
       return new Promise((resolve) => {
-        const arrayBuffer = base64ToArrayBuffer(base64Data);
-        if (!audioContext) return resolve();
+        if (!audioContext || audioContext.state === 'closed') return resolve();
 
+        const arrayBuffer = base64ToArrayBuffer(base64Data);
         audioContext.decodeAudioData(arrayBuffer, (buffer) => {
           const source = audioContext.createBufferSource();
           source.buffer = buffer;
@@ -358,7 +364,10 @@
       stopBtn.disabled = true;
       avatarWrapper.classList.remove('speaking');
       if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
-      if (audioContext && audioContext.state !== 'closed') audioContext.close();
+      if (scriptNode) scriptNode.disconnect();
+      if (audioContext && audioContext.state !== 'closed') {
+        audioContext.close();
+      }
     }
 
     stopBtn.addEventListener('click', () => {
